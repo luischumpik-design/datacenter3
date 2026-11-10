@@ -1,0 +1,609 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Centro de Datos VR</title>
+
+    <!-- A-Frame (requiere Internet) -->
+    <script src="https://aframe.io/releases/1.6.0/aframe.min.js"></script>
+
+    <!-- Componentes personalizados -->
+    <script>
+        /* ---------- Componente rack (sin cambios) ---------- */
+        AFRAME.registerComponent('rack', {
+            schema: {
+                unidades: { type: 'int', default: 8 },
+                estado:   { type: 'string', default: 'ok' }
+            },
+
+            init: function () {
+                var el = this.el;
+                var n  = this.data.unidades;
+                var ledColor = (this.data.estado === 'ok') ? '#00ff55' : '#ff2222';
+
+                var cuerpo = document.createElement('a-box');
+                cuerpo.setAttribute('width', '1');
+                cuerpo.setAttribute('height', '2');
+                cuerpo.setAttribute('depth', '1');
+                cuerpo.setAttribute('position', '0 1 0');
+                cuerpo.setAttribute('color', '#1c1c24');
+                el.appendChild(cuerpo);
+
+                for (let i = 0; i < n; i++) {
+                    let servidor = document.createElement('a-box');
+                    servidor.setAttribute('position', `0 ${0.3 + i * 0.2} 0.52`);
+                    servidor.setAttribute('width', '0.8');
+                    servidor.setAttribute('height', '0.12');
+                    servidor.setAttribute('depth', '0.03');
+                    servidor.setAttribute('color', '#BACAD1');
+                    el.appendChild(servidor);
+
+                    let led = document.createElement('a-sphere');
+                    led.setAttribute('position', `0.35 ${0.3 + i * 0.2} 0.55`);
+                    led.setAttribute('radius', '0.03');
+                    led.setAttribute('color', ledColor);
+                    el.appendChild(led);
+                }
+            }
+        });
+
+        /* ---------- Componente info-rack (CLASE 4 corregido) ---------- */
+    AFRAME.registerComponent('info-rack', {
+    schema: {
+        titulo:  { type: 'string', default: 'RACK' },
+        detalle: { type: 'string', default: '' },
+        estado:  { type: 'string', default: 'ok' }
+    },
+    init: function () {
+        const rack = this.el;
+
+        // Panel 3D solo texto, sin fondo
+        const panel = document.createElement('a-text');
+        panel.setAttribute('value', this.data.titulo + '\n' + this.data.detalle);
+        panel.setAttribute('position', '0 2.50 0.7');
+        panel.setAttribute('look-at', '#camara');
+        panel.setAttribute('width', 2);
+        panel.setAttribute('align', 'center');
+        panel.setAttribute('color', this.data.estado === 'falla' ? '#ff4444' : '#ffffff');
+        panel.setAttribute('wrap-count', 25);
+        panel.setAttribute('visible', false);
+        rack.appendChild(panel);
+
+        // Detector invisible para el cursor
+        const detector = document.createElement('a-box');
+        detector.classList.add('interactive');
+        detector.setAttribute('position', '0 1 0.6');
+        detector.setAttribute('width', '0.7');
+        detector.setAttribute('height', '2.1');
+        detector.setAttribute('depth', '0.08');
+        detector.setAttribute('material',
+            'color: #77eaff; transparent: true; opacity: 0.015; depthWrite: false');
+        rack.appendChild(detector);
+
+        const datos = this.data;
+
+        detector.addEventListener('click', function () {
+            const abrir = !panel.getAttribute('visible');
+            panel.setAttribute('visible', abrir);
+
+            const area = document.getElementById('detalle');
+            if (area) {
+                area.classList.remove('hide');
+                area.innerHTML =
+                    '<strong>' + datos.titulo + '</strong>' +
+                    '<p>' + datos.detalle + '</p>' +
+                    '<p class="small">Estado simulado: ' +
+                        (datos.estado === 'falla' ? 'FALLA' : 'ACTIVO') +
+                    '</p>';
+            }
+
+            try {
+                const AC = window.AudioContext || window.webkitAudioContext;
+                if (AC) {
+                    const ctx = window.sonidoCtx || (window.sonidoCtx = new AC());
+                    if (ctx.state === 'suspended') ctx.resume();
+                    const osc = ctx.createOscillator();
+                    const gan = ctx.createGain();
+                    osc.type = 'sine';
+                    osc.frequency.value = datos.estado === 'falla' ? 320 : 720;
+                    gan.gain.setValueAtTime(0.05, ctx.currentTime);
+                    gan.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.16);
+                    osc.connect(gan);
+                    gan.connect(ctx.destination);
+                    osc.start();
+                    osc.stop(ctx.currentTime + 0.17);
+                }
+            } catch (e) { console.warn('Audio no disponible', e); }
+        });
+    }
+});
+
+AFRAME.registerComponent('vertical-controls', {
+    schema: {
+        speed: { type: 'number', default: 1.5 },   // m/s de subida/bajada
+        minY:  { type: 'number', default: 0.20 },  // límite inferior (suelo)
+        maxY:  { type: 'number', default: 2.80 }   // límite superior (bajo el techo)
+    },
+
+    init: function () {
+        this.keys = { up: false, down: false };
+        this._onKeyDown = this._onKeyDown.bind(this);
+        this._onKeyUp   = this._onKeyUp.bind(this);
+        window.addEventListener('keydown', this._onKeyDown);
+        window.addEventListener('keyup',   this._onKeyUp);
+    },
+
+    _onKeyDown: function (evt) {
+        // Ignorar si el usuario escribe en un campo de texto
+        const t = evt.target;
+        if (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable) return;
+
+        const k = evt.key.toLowerCase();
+        if (k === 'q') { this.keys.up   = true; evt.preventDefault(); }  // Q = subir
+        if (k === 'e') { this.keys.down = true; evt.preventDefault(); }  // E = bajar
+    },
+
+    _onKeyUp: function (evt) {
+        const k = evt.key.toLowerCase();
+        if (k === 'q') this.keys.up   = false;
+        if (k === 'e') this.keys.down = false;
+    },
+
+    tick: function (time, delta) {
+        if (!this.keys.up && !this.keys.down) return;
+
+        // Normaliza el delta: 16 ms ≈ 60 fps. Cap a 100 ms por si hay lag.
+        const dt = Math.min(delta, 100) / 1000;
+
+        let dy = 0;
+        if (this.keys.up)   dy += this.data.speed * dt;
+        if (this.keys.down) dy -= this.data.speed * dt;
+
+        const pos = this.el.object3D.position;
+        pos.y = Math.max(this.data.minY, Math.min(this.data.maxY, pos.y + dy));
+    },
+
+    remove: function () {
+        window.removeEventListener('keydown', this._onKeyDown);
+        window.removeEventListener('keyup',   this._onKeyUp);
+    }
+});
+
+        
+/* Genera una textura procedural y la devuelve como dataURL */
+function crearTextura(tipo) {
+    const c = document.createElement('canvas');
+    c.width = c.height = 256;
+    const ctx = c.getContext('2d');
+
+    if (tipo === 'metal') {
+        // Metal cepillado: fondo gris + líneas finas horizontales
+        ctx.fillStyle = '#9aa5b0';
+        ctx.fillRect(0, 0, 256, 256);
+        for (let i = 0; i < 256; i += 2) {
+            ctx.strokeStyle = 'rgba(255,255,255,' + (Math.random() * 0.15) + ')';
+            ctx.beginPath();
+            ctx.moveTo(0, i);
+            ctx.lineTo(256, i);
+            ctx.stroke();
+        }
+    } else if (tipo === 'perforado') {
+        // Chapa perforada: fondo gris + puntos oscuros
+        ctx.fillStyle = '#b5bdc6';
+        ctx.fillRect(0, 0, 256, 256);
+        ctx.fillStyle = '#3a424a';
+        for (let y = 8; y < 256; y += 16) {
+            for (let x = 8; x < 256; x += 16) {
+                ctx.beginPath();
+                ctx.arc(x, y, 4, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+    } else if (tipo === 'plastico') {
+        // Plástico: base lisa + grano sutil
+        ctx.fillStyle = '#d0d6dc';
+        ctx.fillRect(0, 0, 256, 256);
+        for (let i = 0; i < 2000; i++) {
+            ctx.fillStyle = 'rgba(0,0,0,' + (Math.random() * 0.08) + ')';
+            ctx.fillRect(Math.random() * 256, Math.random() * 256, 1, 1);
+        }
+    }
+
+    return c.toDataURL();
+}
+
+/* Componente que aplica textura + color al modelo, conservando el color base */
+AFRAME.registerComponent('ac-texture', {
+    schema: {
+        tipo:  { type: 'string', default: 'metal' },
+        color: { type: 'color',  default: '#ffffff' },
+        rough: { type: 'number', default: 0.6 },
+        metal: { type: 'number', default: 0.7 }
+    },
+    init: function () {
+        const el = this.el;
+        const apply = () => {
+            const mesh = el.getObject3D('mesh');
+            if (!mesh) return;
+
+            const dataURL = crearTextura(this.data.tipo);
+            const loader = new THREE.TextureLoader();
+            loader.load(dataURL, (tex) => {
+                tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+                tex.repeat.set(2, 2);           // ajusta densidad
+                const tint = new THREE.Color(this.data.color);
+
+                mesh.traverse((node) => {
+                    if (!node.isMesh || !node.material) return;
+                    const mats = Array.isArray(node.material) ? node.material : [node.material];
+                    mats.forEach((m) => {
+                        m.map = tex;
+                        if (m.color) m.color.copy(tint);
+                        if ('roughness' in m) m.roughness = this.data.rough;
+                        if ('metalness' in m) m.metalness = this.data.metal;
+                        m.needsUpdate = true;
+                    });
+                });
+            });
+        };
+        el.addEventListener('model-loaded', apply);
+    }
+});
+
+    </script>
+
+    <!-- Hoja de estilos externa -->
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+
+    <!-- ===== INTERFAZ 2D (la estiliza style.css) ===== -->
+    <div class="hud">
+        <h2>ESPOCH | Centro de Datos VR</h2>
+        <p>W A S D: caminar · Ratón: mirar · Clic o punto central: seleccionar rack.</p>
+        <p>8 racks · CRAC · piso técnico · alarma · 3 modelos GLB</p>
+        <a href="ar.html">Abrir realidad aumentada</a>
+        <button type="button" id="gaze">Activar mirada 1,5 s</button>
+        <button type="button" id="stats">Mostrar / ocultar FPS</button>
+        <button type="button" id="reset">Volver a entrada</button>
+    </div>
+
+    <div class="info hide" id="detalle">
+        <strong>Bienvenido al laboratorio</strong>
+        <p>Seleccione un rack para consultar su función y estado. Busque el equipo con FALLA.</p>
+        <p class="small">Simulación educativa. Use un navegador compatible con WebXR para entrar en VR.</p>
+    </div>
+
+    <!-- ===== ESCENA 3D ===== -->
+    <a-scene background="color: #0b0d12">
+
+        <!-- Assets -->
+        <a-assets>
+            <a-asset-item id="escritorio-glb" src="models/escritorio.glb"></a-asset-item>
+            <a-asset-item id="router-glb"     src="models/wifi_router.glb"></a-asset-item>
+            <a-asset-item id="rack-glb"       src="models/server_racking_system.glb"></a-asset-item>
+            <a-asset-item id="rejilla-glb"    src="models/rejilla.glb"></a-asset-item>
+            <a-asset-item id="aire-glb"       src="models/aire.glb"></a-asset-item>
+        </a-assets>
+
+        <!-- ===== PUERTA DE ACCESO ===== -->
+        <a-box position="0 1 1.91" width="1.2" height="2" depth="0.04" color="#6B440F"></a-box>
+        <a-sphere position="0.43 1 1.81" radius="0.055" color="#f5c542"></a-sphere>
+        <a-text
+            value="ACCESO \nAL CENTRO \nDE DATOS"
+            position="0 1.35 1.78"
+            rotation="0 180 0"
+            align="center"
+            width="3"
+            color="#ffffff">
+        </a-text>
+
+        <!-- ===== PUERTA DE SALIDA ===== -->
+        <a-box position="0 1 -9.91" width="1.2" height="2" depth="0.04" color="#6B440F"></a-box>
+        <a-sphere position="0.43 1 -9.81" radius="0.055" color="#f5c542"></a-sphere>
+        <a-text
+            value="SALIDA \nDEL CENTRO \nDE DATOS"
+            position="0 1.35 -9.78"
+            align="center" width="3" color="#ffffff">
+        </a-text>
+
+                <!-- ===== ALARMA Y SALIDA (CLASE 5) ===== -->
+        <!-- Luz de alarma roja parpadeante -->
+        <a-light type="point" color="#ff2222" intensity="0.5" 
+                 distance="3" position="1.2 2 -5" 
+                 animation="property: intensity; from: 0.2; to: 1.4; dir: alternate; dur: 650; loop: true"></a-light>
+        
+        <!-- Letrero de SALIDA en el piso cerca de la puerta de salida -->
+        <a-text value="SALIDA" position="0 0.03 -9" rotation="-90 0 0" 
+                align="center" width="1.8" color="#ffe166"></a-text>
+
+        <!-- ===== UNIDAD DE CLIMATIZACIÓN CRAC ===== -->
+
+            <!-- Cuerpo principal -->
+            <a-box position="-3 0.9 1.5"  width="1.2"  height="1.8"  depth="0.8"  material="color: #F0FBEA; metalness: 0.8; roughness: 0.4"></a-box>
+
+            <!-- Tapa superior metálica -->
+            <a-box position="-3 1.82 1.5" width="1.24" height="0.06" depth="0.84"
+                material="color: #8899aa; metalness: 0.9; roughness: 0.5"></a-box>
+
+            <!-- Panel de control (izquierda) -->
+            <a-box position="-3.17 1.62 1.08" width="0.45" height="0.22" depth="0.03" color="#1a2530"></a-box>
+            <a-sphere position="-3.33 1.62 1.06" radius="0.02" material="color: #00ff55; emissive: #00ff55"></a-sphere>
+            <a-sphere position="-3.27 1.62 1.06" radius="0.02" material="color: #ffaa00; emissive: #ffaa00"></a-sphere>
+            <a-text value="22.5°" position="-3.09 1.62 1.06" align="center" width="0.28" color="#00ff88"></a-text>
+
+            <!-- Pantalla cuadriculada (6 columnas × 2 filas) -->
+<!-- Fondo de la pantalla -->
+<a-box position="-3.17 1.62 1.064" width="0.42" height="0.16" depth="0.004" color="#05080c"></a-box>
+
+<!-- 5 verticales internas = 6 columnas -->
+<a-box position="-3.31 1.62 1.061" width="0.002" height="0.16" depth="0.001"
+       material="color: #00ff88; emissive: #00ff88; emissiveIntensity: 0.7"></a-box>
+<a-box position="-3.24 1.62 1.061" width="0.002" height="0.16" depth="0.001"
+       material="color: #00ff88; emissive: #00ff88; emissiveIntensity: 0.7"></a-box>
+<a-box position="-3.17 1.62 1.061" width="0.002" height="0.16" depth="0.001"
+       material="color: #00ff88; emissive: #00ff88; emissiveIntensity: 0.7"></a-box>
+<a-box position="-3.10 1.62 1.061" width="0.002" height="0.16" depth="0.001"
+       material="color: #00ff88; emissive: #00ff88; emissiveIntensity: 0.7"></a-box>
+<a-box position="-3.03 1.62 1.061" width="0.002" height="0.16" depth="0.001"
+       material="color: #00ff88; emissive: #00ff88; emissiveIntensity: 0.7"></a-box>
+
+<!-- 1 horizontal = 2 filas -->
+<a-box position="-3.17 1.62 1.061" width="0.42" height="0.002" depth="0.001"
+       material="color: #00ff88; emissive: #00ff88; emissiveIntensity: 0.7"></a-box>
+
+            <!-- ===== PANEL DE TEMPERATURA (fija) ===== -->
+
+            <!-- Fondo del panel -->
+            <a-box position="-2.72 1.62 1.075"
+                width="0.44" height="0.22" depth="0.015"
+                color="#1a2530"></a-box>
+
+            <!-- Temperatura -->
+            <a-text value="22.5°C"
+                    rotation="0 180 0"
+                    position="-2.72 1.66 1.040"
+                    align="center" width="1.2" color="#00ff88"></a-text>
+
+            <!-- Modelo -->
+            <a-text value="AC-3000"
+                    rotation="0 180 0"
+                    position="-2.72 1.58 1.040"
+                    align="center" width="1.2" color="#00e5ff"></a-text>
+
+            <!-- Línea divisoria vertical entre panel superior y rejilla -->
+            <a-box position="-3 1.28 1.09" width="0.95" height="0.03" depth="0.02"
+                material="color: #5a6778; metalness: 0.8; roughness: 0.4"></a-box>
+
+            <!-- Marco de la rejilla frontal -->
+            <a-box position="-3 0.85 1.09" width="0.95" height="0.75" depth="0.02" color="#263849"></a-box>
+
+            <!-- Ventilador detrás de la rejilla (círculo oscuro) -->
+            <a-circle position="-3 0.85 1.10" radius="0.28" color="#0f1419" segments="24"></a-circle>
+
+            <!-- Aspas del ventilador (3 aspas radiales) -->
+            <a-box position="-3 0.85 1.10" width="0.50" height="0.03" depth="0.005" color="#3a4552" rotation="0 0 0"></a-box>
+            <a-box position="-3 0.85 1.10" width="0.50" height="0.03" depth="0.005" color="#3a4552" rotation="0 0 60"></a-box>
+            <a-box position="-3 0.85 1.10" width="0.50" height="0.03" depth="0.005" color="#3a4552" rotation="0 0 120"></a-box>
+
+            <!-- Eje central del ventilador -->
+            <a-sphere position="-3 0.85 1.10" radius="0.045"
+                    material="color: #5a6778; metalness: 0.9; roughness: 0.3"></a-sphere>
+
+            <!-- Lamas metálicas de la rejilla (4) -->
+            <a-box position="-3 1.10 1.08" width="0.88" height="0.03" depth="0.04"
+                material="color: #8899aa; metalness: 0.9; roughness: 0.5"></a-box>
+            <a-box position="-3 0.95 1.08" width="0.88" height="0.03" depth="0.04"
+                material="color: #8899aa; metalness: 0.9; roughness: 0.5"></a-box>
+            <a-box position="-3 0.80 1.08" width="0.88" height="0.03" depth="0.04"
+                material="color: #8899aa; metalness: 0.9; roughness: 0.5"></a-box>
+            <a-box position="-3 0.65 1.08" width="0.88" height="0.03" depth="0.04"
+                material="color: #8899aa; metalness: 0.9; roughness: 0.5"></a-box>
+
+            <!-- Rejillas laterales metálicas (3 líneas por lado) -->
+            <a-box position="-3.61 1.30 1.5" width="0.02" height="0.03" depth="0.55"
+                material="color: #8899aa; metalness: 0.9; roughness: 0.5"></a-box>
+            <a-box position="-3.61 1.15 1.5" width="0.02" height="0.03" depth="0.55"
+                material="color: #8899aa; metalness: 0.9; roughness: 0.5"></a-box>
+            <a-box position="-3.61 1.00 1.5" width="0.02" height="0.03" depth="0.55"
+                material="color: #8899aa; metalness: 0.9; roughness: 0.5"></a-box>
+
+            <a-box position="-2.39 1.30 1.5" width="0.02" height="0.03" depth="0.55"
+                material="color: #8899aa; metalness: 0.9; roughness: 0.5"></a-box>
+            <a-box position="-2.39 1.15 1.5" width="0.02" height="0.03" depth="0.55"
+                material="color: #8899aa; metalness: 0.9; roughness: 0.5"></a-box>
+            <a-box position="-2.39 1.00 1.5" width="0.02" height="0.03" depth="0.55"
+                material="color: #8899aa; metalness: 0.9; roughness: 0.5"></a-box>
+
+            <!-- Etiqueta superior -->
+            <a-text value="CRAC - CLIMATIZACION"
+                    position="-3 2.05 1.05"
+                    rotation="0 180 0"
+                    align="center" width="2.3" color="#00e5ff"></a-text>
+
+        <!-- ===== PISO ===== -->
+        <a-plane position="0 0 -4" rotation="-90 0 0" width="8" height="12" color="#6F95BE"></a-plane>
+
+        <!-- ===== CUADRÍCULA DEL PISO ===== -->
+            <a-box position="-3 0.004 -4" width="0.008" height="0.008" depth="12" color="#9aabba"></a-box>
+            <a-box position="-2 0.004 -4" width="0.008" height="0.008" depth="12" color="#9aabba"></a-box>
+            <a-box position="-1 0.004 -4" width="0.008" height="0.008" depth="12" color="#9aabba"></a-box>
+            <a-box position="0 0.004 -4"  width="0.008" height="0.008" depth="12" color="#9aabba"></a-box>
+            <a-box position="1 0.004 -4"  width="0.008" height="0.008" depth="12" color="#9aabba"></a-box>
+            <a-box position="2 0.004 -4"  width="0.008" height="0.008" depth="12" color="#9aabba"></a-box>
+            <a-box position="3 0.004 -4"  width="0.008" height="0.008" depth="12" color="#9aabba"></a-box>
+
+            <a-box position="0 0.004 1"  width="8" height="0.008" depth="0.008" color="#9aabba"></a-box>
+            <a-box position="0 0.004 0"  width="8" height="0.008" depth="0.008" color="#9aabba"></a-box>
+            <a-box position="0 0.004 -1" width="8" height="0.008" depth="0.008" color="#9aabba"></a-box>
+            <a-box position="0 0.004 -2" width="8" height="0.008" depth="0.008" color="#9aabba"></a-box>
+            <a-box position="0 0.004 -3" width="8" height="0.008" depth="0.008" color="#9aabba"></a-box>
+            <a-box position="0 0.004 -4" width="8" height="0.008" depth="0.008" color="#9aabba"></a-box>
+            <a-box position="0 0.004 -5" width="8" height="0.008" depth="0.008" color="#9aabba"></a-box>
+            <a-box position="0 0.004 -6" width="8" height="0.008" depth="0.008" color="#9aabba"></a-box>
+            <a-box position="0 0.004 -7" width="8" height="0.008" depth="0.008" color="#9aabba"></a-box>
+            <a-box position="0 0.004 -8" width="8" height="0.008" depth="0.008" color="#9aabba"></a-box>
+            <a-box position="0 0.004 -9" width="8" height="0.008" depth="0.008" color="#9aabba"></a-box>
+
+        <!-- ===== PAREDES ===== -->
+        <a-box position="0 1.5 -10" width="8"   height="3" depth="0.2" color="#325E94"></a-box>
+        <a-box position="0 1.5 2"   width="8"   height="3" depth="0.2" color="#325E94"></a-box>
+        <a-box position="-4 1.5 -4" width="0.2" height="3" depth="12"  color="#325E94"></a-box>
+        <a-box position="4 1.5 -4"  width="0.2" height="3" depth="12"  color="#325E94"></a-box>
+
+                <!-- ===== PANEL DE SUPERVISIÓN SIMULADO (CLASE 5) ===== -->
+        <a-plane position="3.85 1.65 -4" rotation="0 -90 0" width="3" height="1.5" color="#102a39"></a-plane>
+        <a-text value="MONITOREO SIMULADO\nTemp: 22 C\nHumedad: 45%\nRacks activos: 7/8\nRACK 04: FALLA" 
+                position="3.80 1.9 -4" rotation="0 -90 0" 
+                width="2.8" color="#ffffff" align="center"></a-text>
+
+        <!-- ===== TECHO ===== -->
+        <a-plane position="0 3 -4" rotation="90 0 0" width="8" height="12" color="#2A4E7A"></a-plane>
+
+        <!-- ===== ILUMINACIÓN ===== -->
+        <a-entity light="type: ambient; intensity: 0.6"></a-entity>
+        <a-entity light="type: point; intensity: 1" position="0 2.8 -4"></a-entity>
+        <a-entity light="type: point; intensity: 1" position="0 2.8 -1"></a-entity>
+
+        <!-- ===== TÍTULO EN PARED ===== -->
+        <a-text
+            value="CENTRO DE DATOS"
+            position="0 2.3 -9.7"
+            align="center"
+            width="8"
+            color="#1A216E">
+        </a-text>
+
+        <!-- ===== REJILLAS DE PISO (centradas bajo cada rack) ===== -->
+            <!-- Fila izquierda -->
+            <a-gltf-model src="#rejilla-glb" position="-2.80 0.02 -1.50" rotation="-90 0 0" scale="0.07 0.165 0.07"></a-gltf-model>
+
+            <!-- Fila derecha -->
+            <a-gltf-model src="#rejilla-glb" position=" 1.15 0.02 -1.50" rotation="-90 0 0" scale="0.07 0.165 0.07"></a-gltf-model>
+
+
+        <!-- ===== FILA IZQUIERDA ===== -->
+        <a-entity info-rack="titulo: RACK 01; detalle: SERVIDORES WEB - ACTIVO; estado: ok"
+                position="-2 -0.1 -2" rotation="0 90 0">
+            <a-gltf-model src="#rack-glb" scale="1.1 1.1 1.1"></a-gltf-model>
+        </a-entity>
+
+        <a-entity info-rack="titulo: RACK 02; detalle: BASE DE DATOS - ACTIVO; estado: ok"
+                position="-2 -0.1 -4" rotation="0 90 0">
+            <a-gltf-model src="#rack-glb" scale="1.1 1.1 1.1"></a-gltf-model>
+        </a-entity>
+
+        <a-entity info-rack="titulo: RACK 03; detalle: MONITOREO - ACTIVO; estado: ok"
+                position="-2 -0.1 -6" rotation="0 90 0">
+            <a-gltf-model src="#rack-glb" scale="1.1 1.1 1.1"></a-gltf-model>
+        </a-entity>
+
+        <a-entity info-rack="titulo: RACK 04; detalle: MONITOREO - FALLA; estado: falla"
+                position="-2 -0.1 -8" rotation="0 90 0">
+            <a-gltf-model src="#rack-glb" scale="1.1 1.1 1.1"></a-gltf-model>
+        </a-entity>
+
+        <!-- ===== FILA DERECHA ===== -->
+        <a-entity info-rack="titulo: RACK 05; detalle: ALMACENAMIENTO - FALLA; estado: falla"
+                position="2 -0.1 -2" rotation="0 270 0">
+            <a-gltf-model src="#rack-glb" scale="1.1 1.1 1.1"></a-gltf-model>
+        </a-entity>
+
+        <a-entity info-rack="titulo: RACK 06; detalle: BACKUP - ACTIVO; estado: ok"
+                position="2 -0.1 -4" rotation="0 270 0">
+            <a-gltf-model src="#rack-glb" scale="1.1 1.1 1.1"></a-gltf-model>
+        </a-entity>
+
+        <a-entity info-rack="titulo: RACK 07; detalle: RED - ACTIVO; estado: ok"
+                position="2 -0.1 -6" rotation="0 270 0">
+            <a-gltf-model src="#rack-glb" scale="1.1 1.1 1.1"></a-gltf-model>
+        </a-entity>
+
+        <a-entity info-rack="titulo: RACK 08; detalle: SEGURIDAD - ACTIVO; estado: ok"
+                position="2 -0.1 -8" rotation="0 270 0">
+            <a-gltf-model src="#rack-glb" scale="1.1 1.1 1.1"></a-gltf-model>
+        </a-entity>
+
+                <!-- ===== RÓTULOS DE PASILLO (CLASE 5) ===== -->
+        <a-text value="RACK 01 - ACTIVO" position="-1.1 2.2 -2" rotation="0 90 0" align="center" width="2" color="#ffffff"></a-text>
+        <a-text value="RACK 04 - FALLA" position="-1.1 2.2 -8" rotation="0 90 0" align="center" width="2" color="#ff4444"></a-text>
+        
+        <a-text value="PASILLO FRIO" position="0 2.5 -4" align="center" width="3" color="#ffffff"></a-text>
+
+        <!-- ===== OTROS MODELOS 3D GLB ===== -->
+            <a-gltf-model src="#servidores-glb" position="-2.85 0.12 -1.25" rotation="0 0 0"   scale="1.6 1.6 1.6"></a-gltf-model>
+            <a-gltf-model src="#escritorio-glb" position="2.8 0.12 1.50" rotation="0 90 0" scale="0.010 0.010 0.010"></a-gltf-model>
+            <a-gltf-model src="#router-glb" position="3.5 0.62 1.5" rotation="0 180 0" scale="1.4 1.4 1.4"></a-gltf-model>
+
+            <!-- AIRE ACONDICIONADO -->
+             <!--Izquierda-->
+            <a-gltf-model src="#aire-glb" position="-3.90 0.40 -1.90" rotation="0 90 0" scale="1.5 1.5 1.5" ac-texture="tipo: metal; color: #8899aa; rough: 0.5; metal: 0.9"></a-gltf-model>
+            <a-gltf-model src="#aire-glb" position="-3.90 1.16 -1.90" rotation="0 90 0" scale="1.5 1.5 1.5" ac-texture="tipo: metal; color: #8899aa; rough: 0.5; metal: 0.9"></a-gltf-model>
+
+            <a-gltf-model src="#aire-glb" position="-3.90 0.40 -9.7" rotation="0 90 0" scale="1.5 1.5 1.5" ac-texture="tipo: metal; color: #8899aa; rough: 0.5; metal: 0.9"></a-gltf-model>
+            <a-gltf-model src="#aire-glb" position="-3.90 1.16 -9.7" rotation="0 90 0" scale="1.5 1.5 1.5" ac-texture="tipo: metal; color: #8899aa; rough: 0.5; metal: 0.9"></a-gltf-model>
+
+            <!--Derecha-->
+            <a-gltf-model src="#aire-glb" position="3.90 0.40 -8.55" rotation="0 270 0" scale="1.5 1.5 1.5" ac-texture="tipo: metal; color: #8899aa; rough: 0.5; metal: 0.9"></a-gltf-model>
+            <a-gltf-model src="#aire-glb" position="3.90 1.16 -8.55" rotation="0 270 0" scale="1.5 1.5 1.5" ac-texture="tipo: metal; color: #8899aa; rough: 0.5; metal: 0.9"></a-gltf-model>
+            
+            <a-gltf-model src="#aire-glb" position="3.90 0.40 -0.78" rotation="0 270 0" scale="1.5 1.5 1.5" ac-texture="tipo: metal; color: #8899aa; rough: 0.5; metal: 0.9"></a-gltf-model>
+            <a-gltf-model src="#aire-glb" position="3.90 1.16 -0.78" rotation="0 270 0" scale="1.5 1.5 1.5" ac-texture="tipo: metal; color: #8899aa; rough: 0.5; metal: 0.9"></a-gltf-model>
+
+
+        <!-- ===== CÁMARA + CURSOR ===== -->
+        <a-camera id="camara" position="0 1.6 1"
+            vertical-controls="speed: 1.5; minY: 0.20; maxY: 2.80">
+            <a-cursor raycaster="objects: .interactive" fuse="false" color="#5fe9ff"></a-cursor>
+        </a-camera>
+
+    </a-scene>
+
+   <!-- ===== LÓGICA DE LOS BOTONES DEL HUD ===== -->
+<script>
+// 1) Mirada 1,5 s — activa / desactiva el fuse del cursor
+document.getElementById('gaze').addEventListener('click', function () {
+    const cursor = document.querySelector('a-cursor');
+    // Consultar el estado real del cursor
+    const activado = cursor.getAttribute('cursor').fuse;
+    
+    // Cambiar al estado contrario
+    cursor.setAttribute('cursor', 'fuse', !activado);
+    // Configurar el tiempo de selección
+    cursor.setAttribute('cursor', 'fuseTimeout', 1500);
+    
+    // Actualizar el texto del botón
+    this.textContent = !activado ? 'Desactivar mirada' : 'Activar mirada 1,5 s';
+});
+
+// 2) FPS (sin cambios)
+document.getElementById('stats').addEventListener('click', function () {
+    const escena = document.querySelector('a-scene');
+    if (escena.hasAttribute('stats')) escena.removeAttribute('stats');
+    else escena.setAttribute('stats', '');
+});
+
+// 3) Reset: cámara + mensaje de bienvenida
+document.getElementById('reset').addEventListener('click', function () {
+    const cam = document.querySelector('a-camera');
+    cam.setAttribute('position', '0 1.6 1');
+    cam.setAttribute('rotation', '0 0 0');
+
+    const lc = cam.components['look-controls'];
+    if (lc && lc.pitchObject && lc.yawObject) {
+        lc.pitchObject.rotation.set(0, 0, 0);
+        lc.yawObject.rotation.set(0, 0, 0);
+    }
+
+    const area = document.getElementById('detalle');
+    area.innerHTML =
+        '<strong>Bienvenido al laboratorio</strong>' +
+        '<p>Seleccione un rack para consultar su función y estado. Busque el equipo con FALLA.</p>' +
+        '<p class="small">W A S D para caminar · Q / E para subir / bajar la vista.</p>';
+});
+</script>
+
+</body>
+</html>

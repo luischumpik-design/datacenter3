@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<script src="https://aframe.io/releases/1.6.0/aframe.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.5/dist/mindar-image-aframe.prod.js"></script>
+<style>
+body { margin: 0; font-family: system-ui; }
+.bar {
+  position: fixed;
+  top: 8px;
+  left: 8px;
+  right: 8px;
+  z-index: 9999;
+  background: #10283de8;
+  color: white;
+  border-radius: 9px;
+  padding: 12px;
+  font-size: 14px;
+}
+.bar a { color: #82eaff; }
+.bar small { display: block; margin-top: 5px; }
+.bar button {
+  background: #15576b;
+  color: white;
+  border: 1px solid #65bdd0;
+  border-radius: 6px;
+  padding: 6px 10px;
+  margin-right: 6px;
+  margin-top: 7px;
+  cursor: pointer;
+  font-size: 13px;
+}
+.bar button:hover { background: #1c6f88; }
+.bar button.activo {
+  background: #00a878;
+  border-color: #00ff88;
+  font-weight: bold;
+}
+</style>
+</head>
+<body>
+
+<!-- ===== MENÚ SUPERIOR ===== -->
+<div class="bar">
+  <b>Centro de Datos | Realidad Aumentada</b>
+  <a href="index.html" style="margin-left:10px">Volver a VR</a>
+  <div style="margin-top:7px">
+    <button id="btn-servidor" onclick="tipoAR('servidor')" class="activo">Servidor</button>
+    <button id="btn-router"   onclick="tipoAR('router')">Router</button>
+    <button id="btn-refri"    onclick="tipoAR('refri')">Refrigeración</button>
+  </div>
+  <small>Autorice la cámara y apunte al marcador imagen.jpg impreso. Use HTTPS en Android. Si no reconoce la imagen, revise luz y distancia (30–50 cm).</small>
+</div>
+
+<!-- ===== ESCENA AR ===== -->
+<a-scene mindar-image="imageTargetSrc: targets.mind;"
+  renderer="colorManagement: true" vr-mode-ui="enabled: false"
+  device-orientation-permission-ui="enabled: false">
+
+  <a-assets>
+    <!-- IDs de ASSET únicos -->
+    <a-asset-item id="modelo-servidor" src="models/server_racking_system.glb"></a-asset-item>
+    <a-asset-item id="modelo-router"   src="models/wifi_router.glb"></a-asset-item>
+    <a-asset-item id="modelo-refri"    src="models/aire.glb"></a-asset-item>
+  </a-assets>
+
+  <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
+
+  <a-entity mindar-image-target="targetIndex: 0">
+
+    <!-- 1. SERVIDOR (visible por defecto) -->
+    <a-entity id="ar-servidor">
+      <a-gltf-model src="#modelo-servidor"
+                    position="0 -0.15 0.1"
+                    scale="0.35 0.35 0.35"
+                    rotation="0 0 0"></a-gltf-model>
+    </a-entity>
+
+    <!-- 2. ROUTER (oculto por defecto) -->
+    <a-entity id="ar-router" visible="false">
+      <a-gltf-model src="#modelo-router"
+                    position="0 -0.10 0.1"
+                    scale="1.5 1.5 1.5"
+                    rotation="0 0 0"></a-gltf-model>
+    </a-entity>
+
+    <!-- 3. REFRIGERACIÓN / AIRE (oculto por defecto) -->
+    <a-entity id="ar-refri" visible="false">
+      <a-gltf-model src="#modelo-refri"
+                    position="0 -0.10 0.1"
+                    scale="0.5 0.5 0.5"
+                    rotation="0 0 0"></a-gltf-model>
+    </a-entity>
+
+    <!-- PANEL DE ESTADO INFERIOR -->
+    <a-plane width="1.1" height="0.28" color="#071c2b" opacity="0.9"
+             position="0 0.47 0.12"></a-plane>
+    <a-text id="ar-estado" value="SERVIDOR | ACTIVO"
+            align="center" width="1.8" color="#6dffb5"
+            position="0 0.47 0.14"></a-text>
+  </a-entity>
+
+</a-scene>
+
+<!-- ===== LÓGICA DE CAMBIO DE MODELO ===== -->
+<script>
+function tipoAR(tipo) {
+  // IDs únicos: entidades distintas de los assets
+  const ids = { servidor: 'ar-servidor', router: 'ar-router', refri: 'ar-refri' };
+
+  // Mostrar solo el elegido, ocultar los demás
+  Object.keys(ids).forEach(function (k) {
+    document.getElementById(ids[k]).setAttribute('visible', k === tipo);
+  });
+
+  // Actualizar el texto del panel inferior
+  const txt = {
+    servidor: 'SERVIDOR | ACTIVO',
+    router:   'ROUTER WIFI | ACTIVO',
+    refri:    'SISTEMA DE REFRIGERACIÓN | ACTIVO'
+  };
+  document.querySelector('#ar-estado').setAttribute('value', txt[tipo]);
+
+  // Marcar visualmente el botón activo
+  ['btn-servidor', 'btn-router', 'btn-refri'].forEach(function (id) {
+    document.getElementById(id).classList.remove('activo');
+  });
+  const mapaBotones = { servidor: 'btn-servidor', router: 'btn-router', refri: 'btn-refri' };
+  document.getElementById(mapaBotones[tipo]).classList.add('activo');
+}
+</script>
+
+</body>
+</html>

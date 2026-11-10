@@ -1,0 +1,126 @@
+/* ============================================================
+   Centro de Datos VR — Hoja de estilos de la interfaz 2D
+   Guía práctica CSS (Pasos 3 a 12 completos)
+   ============================================================ */
+
+/* ---------- Paso 3. Estilo general de la página ---------- */
+body {
+    margin: 0;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: #07121e;
+    color: white;
+    -webkit-font-smoothing: antialiased;
+}
+
+/* ---------- Paso 4 + Paso 12.3. HUD arriba a la DERECHA ---------- */
+.hud {
+    position: fixed;
+    top: 12px;
+    right: 12px;                   /* Paso 12.3: antes left: 12px */
+    left: auto;                    /* evita que el panel se estire */
+    z-index: 10;
+    background: #04101ae0;         /* Paso 12.1: fondo más oscuro */
+    border: 1px solid #3a7890;
+    border-radius: 12px;
+    padding: 14px 16px;
+    max-width: 320px;
+    box-shadow: 0 8px 30px #0008;
+    backdrop-filter: blur(4px);    /* mejora: suaviza el fondo 3D detrás */
+}
+
+/* ---------- Paso 5 + Paso 12.2. Título más legible ---------- */
+.hud h2 {
+    margin: 0 0 8px;
+    color: #ffd34d;                /* Paso 12.2: ámbar de alto contraste */
+    font-size: 18px;
+    letter-spacing: 0.5px;
+}
+
+.hud p {
+    margin: 5px 0;
+    font-size: 13px;
+    line-height: 1.5;
+}
+
+/* ---------- Paso 6 + mejora de interacción (hover / active) ---------- */
+.hud button,
+.hud a {
+    display: inline-block;
+    background: #15576b;
+    color: white;
+    border: 1px solid #65bdd0;
+    border-radius: 7px;
+    padding: 7px 10px;
+    margin: 5px 4px 0 0;
+    text-decoration: none;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 500;
+    transition: background 0.15s ease, transform 0.1s ease, box-shadow 0.15s ease;
+}
+
+.hud button:hover,
+.hud a:hover {
+    background: #1c6f88;
+    box-shadow: 0 2px 8px #0006;
+}
+
+.hud button:active,
+.hud a:active {
+    transform: translateY(1px);
+}
+
+/* ---------- Paso 7 + Paso 12.5. Foco accesible ---------- */
+.hud button:focus-visible,
+.hud a:focus-visible {
+    outline: 3px solid #00ff88;    /* Paso 12.5: verde de alto contraste */
+    outline-offset: 2px;           /* mejora: separa el contorno del botón */
+}
+
+/* ---------- Paso 8 + Paso 12.4. Panel inferior ---------- */
+.info {
+    position: fixed;
+    bottom: 15px;
+    left: 12px;
+    z-index: 10;
+    background: #091928ed;
+    border: 1px solid #2d5a78;     /* mejora: borde sutil */
+    border-radius: 9px;
+    padding: 14px 16px;
+    max-width: 350px;
+    font-size: 16px;               /* Paso 12.4: de 14px a 16px */
+    line-height: 1.5;
+    box-shadow: 0 6px 24px #0008;
+    backdrop-filter: blur(4px);
+}
+
+.info strong {
+    color: #69e7ff;
+    display: block;
+    margin-bottom: 6px;
+    font-size: 17px;
+    letter-spacing: 0.5px;
+}
+
+.info p {
+    margin: 6px 0;
+}
+
+/* ---------- Paso 9. Textos secundarios y ocultación ---------- */
+.small {
+    font-size: 12px;
+    color: #c7dce6;
+    opacity: 0.85;
+}
+
+.hide {
+    display: none;
+}
+
+/* ---------- Mejora extra: adaptación a pantallas pequeñas ---------- */
+@media (max-width: 600px) {
+    .hud,
+    .info {
+        max-width: calc(100vw - 24px);
+    }
+}
